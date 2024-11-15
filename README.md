@@ -3,12 +3,6 @@ Qubic smart contracts for bridge between the Qubic network and Ethereum/Arbitrum
 
 ---
 
-# Qubic Bridge Smart Contract
-
-This smart contract is designed to facilitate cross-chain token bridging between the Qubic blockchain and Ethereum. The contract handles the lifecycle of bridge orders, including their creation, update, and transfer processes.
-
----
-
 ## **Contract Design**
 
 ### **Purpose**
