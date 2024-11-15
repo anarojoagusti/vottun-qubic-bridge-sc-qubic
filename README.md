@@ -46,10 +46,7 @@ Each method serves a specific function in the lifecycle of a bridge order. The f
   - `ethTxHash`: Ethereum transaction hash (initially empty when created).
   - `fromQubicToEthereum`: Transfer direction;
 
-- **Queue Management**: Orders are stored in a queue for processing. Each method interacts with the queue to manage the order lifecycle.
-
-### **Event Handling**
-- Placeholder comments for emitting events have been included but are not implemented yet (e.g., `OrderCreated`, `OrderUpdated`, `TokensBurned`).
+- **Queue Management**: RN Orders are stored in a queue for processing. Each method interacts with the queue to manage the order lifecycle.
 
 ---
 
