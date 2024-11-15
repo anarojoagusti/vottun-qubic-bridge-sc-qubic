@@ -3,16 +3,16 @@ project(vottun-qubic-bridge-sc-qubic)
 
 # C++ Standard Config
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Google Test
 find_package(GTest REQUIRED)
-include_directories(${GTEST_INCLUDE_DIRS})
 
 # Header includes
+include_directories(${GTEST_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/contracts)
 include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_SOURCE_DIR}/core/core/src/contracts)
-include_directories(${PROJECT_SOURCE_DIR}/core/core/src/platform)
+include_directories(${PROJECT_SOURCE_DIR}/core/core/src)
 
 # Test cpp
 add_executable(QubicOrderContractTests test/QubicOrderContractTest.cpp)
