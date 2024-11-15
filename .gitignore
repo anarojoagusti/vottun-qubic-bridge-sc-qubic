@@ -1,0 +1,36 @@
+# Ignore CMake build files
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+
+# Ignore Visual Studio files (if applicable, as Qubic core mentioned using MS Visual C++)
+/.vscode/
+/.vs/
+/*.sln
+/*.vcxproj
+/*.vcxproj.filters
+
+# Ignore qubic docs
+/docs/
+
+# Ignore test result files
+/tests/*.log
+/tests/*.out
+/tests/*.xml
+
+# Ignore any dependency manager folders
+/node_modules/
+/package-lock.json
+/yarn.lock
+
+# Ignore IDE specific files
+.idea/
+.DS_Store
+
+# Ignore temporary or swap files
+*~
+*.swp
+*.tmp
+*.temp
