@@ -6,70 +6,86 @@ Qubic smart contracts for bridge between the Qubic network and Ethereum/Arbitrum
 ## **Contract Design**
 
 ### **Purpose**
-The Qubic Bridge Smart Contract provides functionality for:
-1. Initiating bridge orders to transfer tokens to Ethereum.
-2. Managing order states, such as updating with transaction hashes or refunds.
-3. Handling token burns and confirmations during the transfer process.
-4. Supporting both Qubic-to-Ethereum and Ethereum-to-Qubic bridging.
+The Qubic Bridge Smart Contract facilitates the secure transfer of native QUBIC tokens between the Qubic network and Ethereum. The process employs a **lock and mint mechanism** to maintain token equivalence across networks.
 
----
-
-## **Method Overview**
-
-Each method serves a specific function in the lifecycle of a bridge order. The following table explains their purpose, type, and behavior:
-
-| **Method**                      | **Type**                  | **Description**                                                                                   |
-|----------------------------------|---------------------------|---------------------------------------------------------------------------------------------------|
-| **`getBridgeOrder`**             | `PUBLIC_FUNCTION`         | Retrieves details of a specific bridge order based on its `orderId`.                             |
-| **`createBridgeOrder`**          | `PUBLIC_PROCEDURE_WITH_LOCALS` | Creates a new bridge order, initializing it with the sender's Qubic address, destination Ethereum address, and amount. |
-| **`updateBridgeOrder`**          | `PUBLIC_PROCEDURE`        | Updates the status and Ethereum transaction hash of an existing bridge order.                    |
-| **`refundBridgeOrder`**          | `PUBLIC_PROCEDURE`        | Marks an order as refunded and returns the retained tokens to the user.                          |
-| **`pushBridgeOrder`**            | `PUBLIC_PROCEDURE_WITH_LOCALS` | Adds a new order to the processing queue and prepares it for further action.                      |
-| **`pullBridgeOrder`**            | `PUBLIC_PROCEDURE_WITH_LOCALS` | Retrieves an order from the queue by its `orderId` for processing or completion.                 |
-| **`initiateTransferToEthereum`** | `PUBLIC_PROCEDURE_WITH_LOCALS` | Starts the process of transferring tokens to Ethereum by locking the Qubic tokens.              |
-| **`confirmTransferToEthereum`**  | `PUBLIC_PROCEDURE_WITH_LOCALS` | Finalizes the Qubic-to-Ethereum transfer after the tokens have been successfully pushed to Ethereum. |
-| **`initiateTransferToQubic`**    | `PUBLIC_PROCEDURE_WITH_LOCALS` | Begins the process of transferring tokens from Ethereum back to Qubic.                          |
-| **`confirmTransferToQubic`**     | `PUBLIC_PROCEDURE_WITH_LOCALS` | Completes the Ethereum-to-Qubic transfer by unlocking the Qubic tokens.                         |
-| **`burnAmount`**                 | `PUBLIC_PROCEDURE_WITH_LOCALS` | Burns tokens retained in the contract after a successful transfer to Ethereum.                   |
+### **Key Features**
+1. Handles all bridge operations in a single smart contract (no external lock contract required).
+2. Manages token locking, refunds, and state transitions internally.
+3. Processes both Qubic-to-Ethereum and Ethereum-to-Qubic transfers seamlessly.
+4. Maintains a `HashMap`-based order system for efficient lookups and lifecycle management.
 
 ---
 
 ## **State Management**
 
 ### **Data Structures**
-- **`BridgeOrder`**: Represents an order's details, including:
-  - `orderId`: Unique ID for the order. Currently a counter.
-  - `qubicSender`: Address of the user initiating the order on Qubic (invocator)
-  - `ethDestination`: Ethereum address for token reception.
-  - `amount`: Token amount to be transferred.
-  - `status`: Current state of the order (e.g., "Pending", "Refunded", "Burned").
-  - `ethTxHash`: Ethereum transaction hash (initially empty when created).
-  - `fromQubicToEthereum`: Transfer direction;
+- **`BridgeOrder`**:
+  Represents the details of a bridge order.
+  - `orderId`: A unique identifier for the order.
+  - `qubicSender`: Address of the user initiating the order on Qubic.
+  - `ethAddress`: Destination Ethereum address.
+  - `amount`: Token amount to transfer.
+  - `status`: Current status of the order (e.g., `Created`, `Pending`, `Completed`, `Refunded`).
+  - `fromQubicToEthereum`: Indicates the direction of the transfer.
+  
+- **State Variables**:
+  - `lockedTokens`: The total number of QUBIC tokens currently locked in the contract.
+  - `transactionFee`: The required fee for initiating an order.
+  - `orders`: A `HashMap` for storing orders using `orderId` as the key.
 
-- **Queue Management**: RN Orders are stored in a queue for processing. Each method interacts with the queue to manage the order lifecycle.
+---
+
+## **Method Overview**
+
+| **Method**      | **Type**                  | **Description**                                                                 |
+|------------------|---------------------------|---------------------------------------------------------------------------------|
+| **`createOrder`**   | `PUBLIC_FUNCTION`         | Creates a new bridge order, locking the specified amount of tokens in the contract. |
+| **`getOrder`**      | `PUBLIC_FUNCTION`         | Retrieves details of a specific bridge order by `orderId`.                     |
+| **`completeOrder`** | `PUBLIC_PROCEDURE`        | Marks an order as completed, releasing the locked tokens to finalize the transfer. |
+| **`refundOrder`**   | `PUBLIC_PROCEDURE`        | Refunds a bridge order, returning the locked tokens to the sender.             |
+
+---
+
+## **Order Statuses**
+
+The smart contract tracks the state of each order using the following statuses:
+
+1. **`Created` (0)**:
+   - The order has been created, and tokens have been locked in the contract.
+
+2. **`Completed` (1)**:
+   - The tokens have been successfully transferred, and the order is finalized.
+
+3. **`Refunded` (2)**:
+   - The tokens have been returned to the user due to a failed or canceled transfer.
 
 ---
 
 ## **How the Contract Works**
 
 ### **1. Qubic-to-Ethereum Transfer**
-1. User calls `createBridgeOrder` to initiate a bridge order.
-2. The backend detects the order and triggers `pushBridgeOrder`.
-3. Tokens are locked on Qubic via `initiateTransferToEthereum`.
-4. After tokens are minted on Ethereum, `confirmTransferToEthereum` is called to finalize the process.
-5. Retained tokens are burned using `burnAmount`.
+1. The user calls `createOrder` to initiate a bridge order by specifying the amount of QUBIC tokens to transfer and the destination Ethereum address.
+2. The contract locks the tokens and emits a log entry indicating the order creation.
+3. After the backend confirms the Ethereum transaction, the `completeOrder` method is called to finalize the transfer and release the locked tokens.
 
 ### **2. Ethereum-to-Qubic Transfer**
-1. User sends wrapped tokens on Ethereum, initiating `initiateTransferToQubic`.
-2. The backend triggers `pushBridgeOrder` to prepare the Qubic transfer.
-3. Tokens are unlocked on Qubic via `confirmTransferToQubic`.
+1. The user sends wrapped tokens (WQUBIC) on Ethereum, initiating a bridge process on the backend.
+2. The backend calls the Qubic smart contract to release the corresponding QUBIC tokens to the destination address.
+3. The contract updates the order's status to `Completed` upon successful completion of the transfer.
+
+---
+
+## **Notable Changes**
+1. **Token Locking**: 
+   - Tokens are now locked directly in the bridge contract instead of using an external lock contract, simplifying the architecture.
+2. **Removed Event Emissions**:
+   - The contract no longer emits events for integration with Redis Pub/Sub, relying instead on backend polling.
+3. **HashMap Integration**:
+   - The order management system now uses a `HashMap` for efficient order lookups and updates.
 
 ---
 
 ## **Future Enhancements**
-- Implement event emissions for better backend tracking.
-- Add security measures to handle edge cases and prevent misuse.
-- Optimize queue processing logic for higher throughput.
-- Add hash's order processing logic to call procedures instead of using counter-based orderID
-
+- Introduce mechanisms for dynamic fee adjustments based on network conditions.
+- Enhance security to prevent edge cases and ensure seamless operation.
 

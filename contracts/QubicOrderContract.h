@@ -1,186 +1,193 @@
 #pragma once
-//std libs - check typedef implementations
-#include <string>
-#include <cstdint>
-#include <queue>
-#include <map>
-#include <optional>
-//Libs for redis pub/sub 
-#include <sstream>
-#include <winsock2.h> 
 
-#pragma comment(lib, "ws2_32.lib")
 #include "../core/src/contracts/qpi.h"
 
 using namespace QPI;
 
-// Order structure
-struct BridgeOrder {
-    uint64_t orderId;
-    std::string qubicSender;
-    std::string ethAddress;
-    uint64_t amount;
-    std::string orderType;
-    std::string status;
-    std::string ethTxHash;
-    bool fromQubicToEthereum;
-};
 
-struct OrderReceived {
-    std::string orderId;
-    std::string originAccount;
-    std::string destinationAccount;
-    std::string amount;
-    std::string memo;
-    uint32_t sourceChain;
-};
+struct BridgeContract : public ContractBase {
 
-// Contract definition
-struct QubicOrderContract : public ContractBase {
-    // State definition
-    struct State {
-        std::map<uint32_t, BridgeOrder> bridgeOrders;
-        uint32_t nextOrderId = 1;
-        std::queue<uint32_t> orderQueue;
-        uint64_t transactionFee = 1000;  // Fee in QUBIC tokens
+public:
+    // Bridge Order Structure
+    struct BridgeOrder {
+        uint64 orderId;                      // Unique ID for the order
+        id qubicSender;                      // Sender address on Qubic
+        id ethAddress;                       // Destination Ethereum address
+        uint64 amount;                       // Amount to transfer
+        uint8 orderType;                     // Type of order (e.g., mint, transfer)
+        uint8 status;                        // Order status (e.g., Created, Pending, Refunded)
+        bit fromQubicToEthereum;             // Direction of transfer
     };
 
-    // Define state
-    State state;
+    // Input and Output Structs
+    struct createOrder_input {
+        id ethAddress;
+        uint64 amount;
+        bit fromQubicToEthereum;
+    };
 
-    // Procedure to create a new bridge order
-    PUBLIC_PROCEDURE_WITH_LOCALS(createOrder) {
-        if (qpi.invocationReward() < state.transactionFee) {
-            output.returnCode = "INSUFFICIENT_FEE";
+    struct createOrder_output {
+        uint8 status;
+        array<uint8, 32> message;
+    };
+
+    struct completeOrder_input {
+        uint64 orderId;
+    };
+
+    struct completeOrder_output {
+        uint8 status;
+        array<uint8, 32> message;
+    };
+
+    struct refundOrder_input {
+        uint64 orderId;
+    };
+
+    struct refundOrder_output {
+        uint8 status;
+        array<uint8, 32> message;
+    };
+
+    struct getOrder_input {
+        uint64 orderId;
+    };
+
+    struct getOrder_output {
+        uint8 status;
+        array<uint8, 32> message;
+        BridgeOrder order;
+    };
+
+private:
+    // Contract State
+    QPI::HashMap<uint64, BridgeOrder, 256> orders; // Storage for orders (fixed size)
+    uint64 nextOrderId;                            // Counter for order IDs
+    uint64 lockedTokens;                           // Total locked tokens in the contract (balance)
+    uint64 transactionFee;                         // Fee for creating an order
+
+public:
+    // Create a new order and lock tokens
+    PUBLIC_FUNCTION_WITH_LOCALS(createOrder)
+
+        // Validate the input 
+        if (input.amount == 0) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Amount must be greater than 0");
             return;
         }
 
-        qpi.burn(state.transactionFee);  // Burn the fee
+        if (qpi.invocationReward() < state.transactionFee) {
+            output.status = 2; // Error
+            copyMemory(output.message, "Insufficient transaction fee");
+            return;
+        }
 
-        // Create a new bridge order
+        // Lock the tokens
+        state.lockedTokens += input.amount;
+
+        // Create the order
         BridgeOrder newOrder;
         newOrder.orderId = state.nextOrderId++;
         newOrder.qubicSender = qpi.invocator();
         newOrder.ethAddress = input.ethAddress;
         newOrder.amount = input.amount;
-        newOrder.orderType = input.orderType;
-        newOrder.status = "Pending";
-        newOrder.ethTxHash = "";
+        newOrder.orderType = 0; // Default order type
+        newOrder.status = 0; // Created
         newOrder.fromQubicToEthereum = input.fromQubicToEthereum;
 
         // Store the order
-        state.bridgeOrders[newOrder.orderId] = newOrder;
-        state.orderQueue.push(newOrder.orderId);
+        state.orders.set(newOrder.orderId, newOrder);
 
-        output.status = "ORDER_CREATED";
-    }
+        output.status = 0; // Success
+        copyMemory(output.message, "Order created successfully");
+    _
 
-    // Push order to queue
-    PUBLIC_PROCEDURE_WITH_LOCALS(pushBridgeOrder) {
-        auto it = state.bridgeOrders.find(input.orderId);
-        if (it == state.bridgeOrders.end() || it->second.status != "Pending") {
-            output.returnCode = "ORDER_NOT_FOUND_OR_INVALID";
+    // Complete an order and release tokens
+    PUBLIC_PROCEDURE_WITH_LOCALS(completeOrder)
+        // Retrieve the order
+        BridgeOrder order;
+        if (!state.orders.get(input.orderId, order)) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Order not found");
             return;
         }
 
-        state.orderQueue.push(it->first);
-        output.status = "ORDER_PUSHED";
-    }
-
-    // Pull oldest order from queue
-    PUBLIC_PROCEDURE_WITH_LOCALS(pullBridgeOrder) {
-        if (state.orderQueue.empty()) {
-            output.returnCode = "QUEUE_EMPTY";
+        // Check the status
+        if (order.status != 0) { // Ensure it's not already completed or refunded
+            output.status = 2; // Error
+            copyMemory(output.message, "Order not in a valid state for completion");
             return;
         }
 
-        uint32_t orderId = state.orderQueue.front();
-        state.orderQueue.pop();
+        // Update the status and release tokens
+        state.lockedTokens -= order.amount;
+        order.status = 1; // Completed
+        state.orders.set(order.orderId, order);
 
-        auto it = state.bridgeOrders.find(orderId);
-        if (it == state.bridgeOrders.end()) {
-            output.returnCode = "ORDER_NOT_FOUND";
+        output.status = 0; // Success
+        copyMemory(output.message, "Order completed successfully");
+    _
+
+    // Refund an order and unlock tokens
+    PUBLIC_PROCEDURE_WITH_LOCALS(refundOrder)
+
+        // Retrieve the order
+        BridgeOrder order;
+        if (!state.orders.get(input.orderId, order)) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Order not found");
             return;
         }
 
-        const BridgeOrder& order = it->second;
-        output.orderId = order.orderId;
-        output.qubicSender = order.qubicSender;
-        output.ethAddress = order.ethAddress;
-        output.amount = order.amount;
-        output.status = "ORDER_RETRIEVED";
-    }
-
-    // Update order status
-    PUBLIC_PROCEDURE(updateBridgeOrder) {
-        auto it = state.bridgeOrders.find(input.orderId);
-        if (it == state.bridgeOrders.end()) {
-            output.returnCode = "ORDER_NOT_FOUND";
+        // Check the status
+        if (order.status != 0) { // Ensure it's not already completed or refunded
+            output.status = 2; // Error
+            copyMemory(output.message, "Order not in a valid state for refund");
             return;
         }
 
-        it->second.status = input.newStatus;
-        output.returnCode = "ORDER_UPDATED";
-    }
+        // Update the status and refund tokens
+        qpi.transfer(order.qubicSender, order.amount);
+        state.lockedTokens -= order.amount;
+        order.status = 2; // Refunded
+        state.orders.set(order.orderId, order);
 
-    // Refund order
-    PUBLIC_PROCEDURE(refundBridgeOrder) {
-        auto it = state.bridgeOrders.find(input.orderId);
-        if (it == state.bridgeOrders.end() || it->second.status == "Refunded") {
-            output.returnCode = "ORDER_NOT_FOUND_OR_ALREADY_REFUNDED";
+        output.status = 0; // Success
+        copyMemory(output.message, "Order refunded successfully");
+    _
+
+    // Retrieve an order
+    PUBLIC_FUNCTION_WITH_LOCALS(getOrder)
+
+        BridgeOrder order;
+        if (!state.orders.get(input.orderId, order)) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Order not found");
             return;
         }
 
-        if (it->second.amount > 0) {
-            qpi.transfer(it->second.qubicSender, it->second.amount);
-            it->second.status = "Refunded";
-        }
+        output.status = 0; // Success
+        output.order = order;
+        copyMemory(output.message, "Order retrieved successfully");
+    _
 
-        output.returnCode = "REFUND_PROCESSED";
-    }
+    // Register Functions and Procedures
+    REGISTER_USER_FUNCTIONS_AND_PROCEDURES
+        REGISTER_USER_FUNCTION(createOrder, 1);
+        REGISTER_USER_FUNCTION(getOrder, 2);
 
-    // Function to retrieve order details
-    PUBLIC_FUNCTION_WITH_LOCALS(getBridgeOrder) {
-        auto it = state.bridgeOrders.find(input.orderId);
-        if (it == state.bridgeOrders.end()) {
-            output.returnCode = "ORDER_NOT_FOUND";
-            return;
-        }
+        REGISTER_USER_PROCEDURE(completeOrder, 3);
+        REGISTER_USER_PROCEDURE(refundOrder, 4);
+    _
 
-        const BridgeOrder& order = it->second;
-        output.orderId = std::to_string(order.orderId);
-        output.originAccount = order.qubicSender;
-        output.destinationAccount = order.ethAddress;
-        output.amount = std::to_string(order.amount);
-        output.memo = "Bridge Order";
-        output.sourceChain = order.fromQubicToEthereum ? 1 : 0;
-    }
-
-    // Procedure to burn tokens after successful transaction
-    PUBLIC_PROCEDURE_WITH_LOCALS(burnAmount) {
-        auto it = state.bridgeOrders.find(input.orderId);
-        if (it == state.bridgeOrders.end() || it->second.status != "Success") {
-            output.returnCode = "ORDER_NOT_FOUND_OR_INVALID_STATUS";
-            return;
-        }
-
-        qpi.burn(it->second.amount);
-        it->second.status = "Burned";
-        output.returnCode = "AMOUNT_BURNED";
-    }
-
-    // Register functions and procedures
-    REGISTER_USER_FUNCTIONS_AND_PROCEDURES{
-        REGISTER_PROCEDURE(createOrder);
-        REGISTER_PROCEDURE(pushBridgeOrder);
-        REGISTER_PROCEDURE(pullBridgeOrder);
-        REGISTER_PROCEDURE(updateBridgeOrder);
-        REGISTER_PROCEDURE(refundBridgeOrder);
-        REGISTER_PROCEDURE(burnAmount);
-        REGISTER_FUNCTION(getBridgeOrder);
-    }
+    // Initialize the contract
+    INITIALIZE
+        state.nextOrderId = 0;
+        state.lockedTokens = 0;
+        state.transactionFee = 1000; 
+    _
 };
-
 
 
 
