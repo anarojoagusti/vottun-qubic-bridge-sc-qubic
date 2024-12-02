@@ -49,6 +49,16 @@ public:
         array<uint8, 32> message;
     };
 
+    // Order Response Structure 
+    struct OrderResponse {
+        uint64 orderId;                      // Order ID as uint64
+        id originAccount;                    // Origin account
+        id destinationAccount;               // Destination account
+        uint64 amount;                       // Amount as uint64
+        array<uint8, 64> memo;               // Notes or metadata
+        uint32 sourceChain;                  // Source chain identifier
+    };
+
     struct getOrder_input {
         uint64 orderId;
     };
@@ -56,8 +66,9 @@ public:
     struct getOrder_output {
         uint8 status;
         array<uint8, 32> message;
-        BridgeOrder order;
+        OrderResponse order;                 // Updated response format
     };
+
 
 private:
     // Contract State
@@ -137,6 +148,17 @@ public:
             copyMemory(output.message, "Order not found");
             return;
         }
+
+        // Populate OrderResponse with BridgeOrder data
+        copyMemory(output.order.orderId, order.orderId);
+        output.order.originAccount = order.qubicSender;
+        output.order.destinationAccount = order.ethAddress;
+        copyMemory(output.order.amount, order.amount);
+        copyMemory(output.order.memo, "Bridge transfer details"); // Placeholder for metadata
+        output.order.sourceChain = state.sourceChain; 
+
+        output.status = 0; // Success
+        copyMemory(output.message, "Order retrieved successfully");
 
         output.status = 0; // Success
         output.order = order;
@@ -272,6 +294,7 @@ public:
         // Let's try to set admin as the contract creator, not the contract owner
         state.admin = qpi.invocator(); //If this fails, set a predetermined address
         state.managers.reset(); // Initialize managers list
+        state.sourceChain = 0; //Arbitrary numb. No-EVM chain
     _
 };
 
