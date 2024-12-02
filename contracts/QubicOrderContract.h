@@ -65,6 +65,31 @@ private:
     uint64 nextOrderId;                            // Counter for order IDs
     uint64 lockedTokens;                           // Total locked tokens in the contract (balance)
     uint64 transactionFee;                         // Fee for creating an order
+    id admin;                                      // Admin address
+    QPI::HashMap<id, bit, 16> managers;            // Managers list
+
+
+    // Internal methods for admin/manager permissions using qpi CALLS
+    PRIVATE_FUNCTION_WITH_LOCALS(isAdmin)
+        output = (qpi.invocator() == state.admin);
+    _
+
+    PRIVATE_FUNCTION_WITH_LOCALS(isManager)
+        output = state.managers.get(qpi.invocator(), bit());
+    _
+
+    /*
+    // Check if the invocator is the admin
+    bool isAdmin() const {
+        return qpi.invocator() == state.admin;
+    }
+
+    // Check if the invocator is a manager
+    bool isManager() const {
+        bit isManager = false;
+        state.managers.get(qpi.invocator(), isManager);
+        return isManager;
+    }*/
 
 public:
     // Create a new order and lock tokens
@@ -103,8 +128,69 @@ public:
         copyMemory(output.message, "Order created successfully");
     _
 
+    // Retrieve an order
+    PUBLIC_FUNCTION_WITH_LOCALS(getOrder)
+
+        BridgeOrder order;
+        if (!state.orders.get(input.orderId, order)) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Order not found");
+            return;
+        }
+
+        output.status = 0; // Success
+        output.order = order;
+        copyMemory(output.message, "Order retrieved successfully");
+    _
+    // Admin Functions
+    PUBLIC_PROCEDURE_WITH_LOCALS(setAdmin)
+
+        if (qpi.invocator() != state.admin) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Only the current admin can set a new admin");
+            return;
+        }
+        state.admin = input.address;
+        output.status = 0; // Success
+        copyMemory(output.message, "Admin updated successfully");
+    _
+
+   PUBLIC_PROCEDURE_WITH_LOCALS(addManager)
+
+        if (qpi.invocator() != state.admin) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Only the admin can add managers");
+            return;
+        }
+        state.managers.set(input.address, 1); // Add manager
+        output.status = 0; // Success
+        copyMemory(output.message, "Manager added successfully");
+    _
+
+    PUBLIC_PROCEDURE_WITH_LOCALS(removeManager)
+
+        if (qpi.invocator() != state.admin) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Only the admin can remove managers");
+            return;
+        }
+
+        state.managers.removeByKey(input.address); // Remove manager
+        output.status = 0; // Success
+        copyMemory(output.message, "Manager removed successfully");
+    _
+
     // Complete an order and release tokens
     PUBLIC_PROCEDURE_WITH_LOCALS(completeOrder)
+
+        bit isManager = false;
+        CALL(isManager, NoData{}, isManager);
+        if (!isManager) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Only managers can complete orders");
+            return;
+        }
+
         // Retrieve the order
         BridgeOrder order;
         if (!state.orders.get(input.orderId, order)) {
@@ -132,6 +218,14 @@ public:
     // Refund an order and unlock tokens
     PUBLIC_PROCEDURE_WITH_LOCALS(refundOrder)
 
+        bit isManager = false;
+        CALL(isManager, NoData{}, isManager);
+        if (!isManager) {
+            output.status = 1; // Error
+            copyMemory(output.message, "Only managers can refund orders");
+            return;
+        }
+
         // Retrieve the order
         BridgeOrder order;
         if (!state.orders.get(input.orderId, order)) {
@@ -157,35 +251,27 @@ public:
         copyMemory(output.message, "Order refunded successfully");
     _
 
-    // Retrieve an order
-    PUBLIC_FUNCTION_WITH_LOCALS(getOrder)
-
-        BridgeOrder order;
-        if (!state.orders.get(input.orderId, order)) {
-            output.status = 1; // Error
-            copyMemory(output.message, "Order not found");
-            return;
-        }
-
-        output.status = 0; // Success
-        output.order = order;
-        copyMemory(output.message, "Order retrieved successfully");
-    _
-
     // Register Functions and Procedures
     REGISTER_USER_FUNCTIONS_AND_PROCEDURES
         REGISTER_USER_FUNCTION(createOrder, 1);
         REGISTER_USER_FUNCTION(getOrder, 2);
 
-        REGISTER_USER_PROCEDURE(completeOrder, 3);
-        REGISTER_USER_PROCEDURE(refundOrder, 4);
+        REGISTER_USER_PROCEDURE(setAdmin, 3);
+        REGISTER_USER_PROCEDURE(addManager, 4);
+        REGISTER_USER_PROCEDURE(removeManager, 5);
+
+        REGISTER_USER_PROCEDURE(completeOrder, 6);
+        REGISTER_USER_PROCEDURE(refundOrder, 7);
     _
 
     // Initialize the contract
     INITIALIZE
         state.nextOrderId = 0;
         state.lockedTokens = 0;
-        state.transactionFee = 1000; 
+        state.transactionFee = 1000;
+        // Let's try to set admin as the contract creator, not the contract owner
+        state.admin = qpi.invocator(); //If this fails, set a predetermined address
+        state.managers.reset(); // Initialize managers list
     _
 };
 
