@@ -73,6 +73,7 @@ The updated **EthBridge Contract** facilitates secure token bridging between the
 When the contract is deployed, the following values are initialized:
 1. **`nextOrderId`**: Set to `0` to start order ID numbering from 0.
 2. **`lockedTokens`**: Set to `0`, indicating no tokens are locked initially.
+3. **`totalReceivedTokens`**: Set to `0``indicating no tokens are transfered initially to the contract.
 3. **`transactionFee`**: Set to `1000` as the initial fee required for creating orders.
 4. **`admin`**: Set to the address of the contract invocator (deployer).
 5. **`managers`**: Reset to an empty state, allowing admins to add managers as needed.
@@ -221,6 +222,22 @@ Upon deployment:
 
 ### **3. Refunds**
 - If the transfer cannot proceed (e.g., invalid destination), a manager can call `refundOrder` to return the locked tokens to the sender.
+
+---
+
+### **4. Balance and Locked Tokens**
+
+- `totalReceivedTokens`: tracks the total of all tokens sent to the contract, that are not currently in use (locked). It reflects the overall balance the contract has in tokens that are not actively tied to any order.
+
+- `lockedTokens`: represents the amount of the tokens that are actively locked in pending or active orders. It ensures that the contract knows how many tokens are reserved and unavailable for other operations.
+
+**Logic**:
+
+- When a user transfers tokens to the contract (via transferToContract), the `totalReceivedTokens` increases. These tokens are not yet locked until they are associated with an order. This way, the contract keeps track of unused tokens.
+- When an order is in the completion process, the required tokens are deducted from the available `totalReceivedTokens` (totalReceivedTokens -= input.amount) and added to lockedTokens (lockedTokens += input.amount).
+- If an order is refunded or completed:
+    - `lockedTokens` is decreased because the tokens are no longer reserved.
+    - `totalReceivedTokens` remains unchanged, as it no longer was considering those 'lockedTokens' in its balance.
 
 ---
 
