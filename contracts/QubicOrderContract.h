@@ -106,13 +106,27 @@ public:
         OrderResponse order;                 // Updated response format
     };
 
-    // Logger structure
+    // Logger structures
     struct EthBridgeLogger {
         uint32 _contractIndex;   // Index of the contract
         uint32 _errorCode;       // Error code
         uint64 _orderId;         // Order ID if applicable
         uint64 _amount;          // Amount involved in the operation
         char _terminator;        // Marks the end of the logged data
+    };
+
+    struct AddressChangeLogger {
+        uint32 _contractIndex;
+        uint8 _eventCode;        // Event code 'adminchanged'
+        id _newAdminAddress;     // New admin address
+        char _terminator;
+    };
+
+    struct TokensLogger {
+        uint32 _contractIndex;
+        uint64 _lockedTokens;   // Balance tokens locked
+        uint64 _totalReceivedTokens; //Balance total receivedTokens
+        char _terminator;
     };
 
     // Enum for error codes
@@ -151,6 +165,7 @@ private:
     struct isManager_locals {
         bit managerStatus;
     };
+
     PRIVATE_FUNCTION_WITH_LOCALS(isManager)
         locals.managerStatus = false;
         state.managers.get(qpi.invocator(), locals.managerStatus);
@@ -174,7 +189,7 @@ public:
                 EthBridgeError::invalidAmount,
                 0,
                 input.amount,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -187,7 +202,7 @@ public:
                 EthBridgeError::insufficientTransactionFee,
                 0,
                 input.amount,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 2; // Error
@@ -211,7 +226,7 @@ public:
             0, // No error
             locals.newOrder.orderId,
             input.amount,
-            '\0'
+            0
         };
         LOG_INFO(locals.log);
 
@@ -221,47 +236,50 @@ public:
     // Retrieve an order
     struct getOrder_locals {
         EthBridgeLogger log;
+        BridgeOrder order;
+        OrderResponse orderResp;
     };
     PUBLIC_FUNCTION_WITH_LOCALS(getOrder)
 
-        BridgeOrder order;
-        if (!state.orders.get(input.orderId, order)) {
+
+        if (!state.orders.get(input.orderId, locals.order)) {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::orderNotFound,
                 input.orderId,
                 0, // No amount involved in this operation
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
             return;
         }
 
-        OrderResponse orderResp;
+
         // Populate OrderResponse with BridgeOrder data
-        orderResp.orderId = order.orderId;
-        orderResp.originAccount = order.qubicSender;
-        orderResp.destinationAccount = order.ethAddress;
-        orderResp.amount = order.amount;
-        copyMemory(orderResp.memo, "Bridge transfer details"); // Placeholder for metadata
-        orderResp.sourceChain = state.sourceChain;
+        locals.orderResp.orderId = locals.order.orderId;
+        locals.orderResp.originAccount = locals.order.qubicSender;
+        locals.orderResp.destinationAccount = locals.order.ethAddress;
+        locals.orderResp.amount = locals.order.amount;
+        constexpr char placeholderMemo[64] = "Bridge transfer details"; // Placeholder for metadata
+        locals.orderResp.sourceChain = state.sourceChain;
 
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
-            order.orderId,
-            order.amount,
-            '\0'
+            locals.order.orderId,
+            locals.order.amount,
+            0
         };
         LOG_INFO(locals.log);
         output.status = 0; // Success
-        output.order = orderResp;
+        output.order = locals.orderResp;
     _
 
     // Admin Functions
     struct setAdmin_locals {
         EthBridgeLogger log;
+        AddressChangeLogger adminLog;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(setAdmin)
@@ -272,7 +290,7 @@ public:
                 EthBridgeError::onlyManagersCanCompleteOrders,
                 0, // No order ID involved
                 0, // No amount involved
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -280,12 +298,22 @@ public:
         }
 
         state.admin = input.address;
+        //Logging the admin address has changed
+        locals.adminLog = AddressChangeLogger{
+            CONTRACT_INDEX,
+            1, // Event code "Admin Changed"
+            input.address,
+            0
+        };
+
+        LOG_INFO(locals.adminLog);
+
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
             0, // No order ID involved
             0, // No amount involved
-            '\0'
+            0
         };
         LOG_INFO(locals.log);
         output.status = 0; // Success
@@ -293,6 +321,7 @@ public:
 
     struct addManager_locals {
         EthBridgeLogger log;
+        AddressChangeLogger managerLog;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(addManager)
@@ -303,7 +332,7 @@ public:
                 EthBridgeError::onlyManagersCanCompleteOrders,
                 0, // No order ID involved
                 0, // No amount involved
-                '\0'
+                0
             };
             LOG_INFO(locals.log)
                 output.status = 1; // Error
@@ -311,12 +340,22 @@ public:
         }
 
         state.managers.set(input.address, 1); // Add manager
+        //Logging new manager has been added
+        locals.managerLog = AddressChangeLogger{
+            CONTRACT_INDEX,
+            2, // Event code "Manager added"
+            input.address,
+            0
+        };
+
+        LOG_INFO(locals.managerLog);
+
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
             0, // No order ID involved
             0, // No amount involved
-            '\0'
+            0
         };
         LOG_INFO(locals.log);
         output.status = 0; // Success
@@ -324,6 +363,7 @@ public:
 
     struct removeManager_locals {
         EthBridgeLogger log;
+        AddressChangeLogger managerLog;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(removeManager)
@@ -334,7 +374,7 @@ public:
                 EthBridgeError::onlyManagersCanCompleteOrders,
                 0, // No order ID involved
                 0, // No amount involved
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
 
@@ -343,12 +383,23 @@ public:
         }
 
         state.managers.removeByKey(input.address); // Remove manager
+        //Logging a manager has been removed
+        state.managers.set(input.address, 1); // Add manager
+        locals.managerLog = AddressChangeLogger{
+            CONTRACT_INDEX,
+            2, // Event code "Manager remove"
+            input.address,
+            0
+        };
+
+        LOG_INFO(locals.managerLog);
+
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
             0, // No order ID involved
             0, // No amount involved
-            '\0'
+            0
         };
         LOG_INFO(locals.log);
         output.status = 0; // Success
@@ -365,7 +416,7 @@ public:
             0, // No error
             0, // No order ID involved
             state.totalReceivedTokens, // Amount of total tokens
-            '\0'
+            0
         };
         LOG_INFO(locals.log);
         output.totalTokens = state.totalReceivedTokens;
@@ -373,21 +424,26 @@ public:
 
     struct completeOrder_locals {
         EthBridgeLogger log;
+        id invocatorAddress;
+        bit isManagerOperating;
+        BridgeOrder order;
+        TokensLogger logTokens;
     };
 
     // Complete an order and release tokens
     PUBLIC_PROCEDURE_WITH_LOCALS(completeOrder)
-        isManager_input invocatorAddress = qpi.invocator();
-        isManager_output isManagerOperating = false;
-        CALL(isManager, invocatorAddress, isManagerOperating);
+        locals.invocatorAddress = qpi.invocator();
+        locals.isManagerOperating = false;
+        CALL(isManager, locals.invocatorAddress, locals.isManagerOperating);
 
-        if (!isManagerOperating) {
+        //Check if the order is handled by a manager
+        if (!locals.isManagerOperating) {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::onlyManagersCanCompleteOrders,
                 input.orderId,
                 0,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -395,14 +451,13 @@ public:
         }
 
         // Retrieve the order
-        BridgeOrder order;
-        if (!state.orders.get(input.orderId, order)) {
+        if (!state.orders.get(input.orderId, locals.order)) {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::invalidOrderState,
                 input.orderId,
                 0,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -410,13 +465,13 @@ public:
         }
 
         // Check the status
-        if (order.status != 0) { // Ensure it's not already completed or refunded
+        if (locals.order.status != 0) { // Ensure it's not already completed or refunded
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::invalidOrderState,
                 input.orderId,
                 0,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 2; // Error
@@ -424,32 +479,41 @@ public:
         }
 
         // Handle order based on transfer direction
-        if (order.fromQubicToEthereum) {
+        if (locals.order.fromQubicToEthereum) {
             // Ensure sufficient tokens were transferred to the contract
-            if (state.totalReceivedTokens < order.amount) {
+            if (state.totalReceivedTokens - state.lockedTokens < locals.order.amount) {
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
                     EthBridgeError::insufficientLockedTokens,
                     input.orderId,
-                    order.amount,
-                    '\0'
+                    locals.order.amount,
+                    0
                 };
                 LOG_INFO(locals.log);
                 output.status = 4; // Error
                 return;
             }
 
-            state.lockedTokens += order.amount;
+            state.lockedTokens += locals.order.amount; //increase the amount of locked tokens
+            state.totalReceivedTokens -= locals.order.amount; //decrease the amount of no-locked (received) tokens
+            locals.logTokens = TokensLogger{
+                CONTRACT_INDEX,
+                state.lockedTokens,
+                state.totalReceivedTokens,
+                0
+            };
+
+            LOG_INFO(locals.logTokens);
         }
         else {
             // Ensure sufficient tokens are locked for the order
-            if (state.lockedTokens < order.amount) {
+            if (state.lockedTokens < locals.order.amount) {
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
                     EthBridgeError::insufficientLockedTokens,
                     input.orderId,
-                    order.amount,
-                    '\0'
+                    locals.order.amount,
+                    0
                 };
                 LOG_INFO(locals.log);
                 output.status = 5; // Error
@@ -457,53 +521,65 @@ public:
             }
 
             // Transfer tokens back to the user
-            if (qpi.transfer(order.qubicSender, order.amount) < 0) {
+            if (qpi.transfer(locals.order.qubicSender, locals.order.amount) < 0) {
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
                     EthBridgeError::transferFailed,
                     input.orderId,
-                    order.amount,
-                    '\0'
+                    locals.order.amount,
+                    0
                 };
                 LOG_INFO(locals.log);
                 output.status = 6; // Error
                 return;
             }
 
-            state.lockedTokens -= order.amount;
+            state.lockedTokens -= locals.order.amount;
+            locals.logTokens = TokensLogger{
+                CONTRACT_INDEX,
+                state.lockedTokens,
+                state.totalReceivedTokens,
+                0
+            };
+
+            LOG_INFO(locals.logTokens);
         }
 
         // Mark the order as completed
-        order.status = 1; // Completed
-        state.orders.set(order.orderId, order);
+        locals.order.status = 1; // Completed
+        state.orders.set(locals.order.orderId, locals.order);
 
         output.status = 0; // Success
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
             input.orderId,
-            order.amount,
-            '\0'
+            locals.order.amount,
+            0
         };
         LOG_INFO(locals.log);
-    _
+        _
 
-    // Refund an order and unlock tokens
-    struct refundOrder_locals {
-        EthBridgeLogger log;
-    };
+            // Refund an order and unlock tokens
+            struct refundOrder_locals {
+            EthBridgeLogger log;
+            id invocatorAddress;
+            bit isManagerOperating;
+            BridgeOrder order;
+        };
 
-    PUBLIC_PROCEDURE_WITH_LOCALS(refundOrder)
-        id invocatorAddress = qpi.invocator();
-        bit isManagerOperating = false;
-        CALL(isManager, invocatorAddress, isManagerOperating);
-        if (!isManagerOperating) {
+        PUBLIC_PROCEDURE_WITH_LOCALS(refundOrder)
+            locals.invocatorAddress = qpi.invocator();
+        locals.isManagerOperating = false;
+        CALL(isManager, locals.invocatorAddress, locals.isManagerOperating);
+        //Check if the order is handled by a manager
+        if (!locals.isManagerOperating) {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::orderNotFound,
                 input.orderId,
                 0, // No amount involved
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -511,14 +587,13 @@ public:
         }
 
         // Retrieve the order
-        BridgeOrder order;
-        if (!state.orders.get(input.orderId, order)) {
+        if (!state.orders.get(input.orderId, locals.order)) {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::invalidOrderState,
                 input.orderId,
                 0, // No amount involved
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -526,13 +601,13 @@ public:
         }
 
         // Check the status
-        if (order.status != 0) { // Ensure it's not already completed or refunded
+        if (locals.order.status != 0) { // Ensure it's not already completed or refunded
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::transferFailed,
                 input.orderId,
-                order.amount,
-                '\0'
+                locals.order.amount,
+                0
             };
             LOG_INFO(locals.log);
             output.status = 2; // Error
@@ -540,17 +615,17 @@ public:
         }
 
         // Update the status and refund tokens
-        qpi.transfer(order.qubicSender, order.amount);
-        state.lockedTokens -= order.amount;
-        order.status = 2; // Refunded
-        state.orders.set(order.orderId, order);
+        qpi.transfer(locals.order.qubicSender, locals.order.amount);
+        state.lockedTokens -= locals.order.amount;
+        locals.order.status = 2; // Refunded
+        state.orders.set(locals.order.orderId, locals.order);
 
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
             input.orderId,
-            order.amount,
-            '\0'
+            locals.order.amount,
+            0
         };
         LOG_INFO(locals.log);
         output.status = 0; // Success
@@ -559,6 +634,7 @@ public:
     // Transfer tokens to the contract
     struct transferToContract_locals {
         EthBridgeLogger log;
+        TokensLogger logTokens;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(transferToContract)
@@ -569,7 +645,7 @@ public:
                 EthBridgeError::invalidAmount,
                 0, // No order ID
                 input.amount,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             output.status = 1; // Error
@@ -584,7 +660,7 @@ public:
                 EthBridgeError::transferFailed,
                 0, // No order ID
                 input.amount,
-                '\0'
+                0
             };
             LOG_INFO(locals.log);
             return;
@@ -592,12 +668,21 @@ public:
 
         // Update the total received tokens
         state.totalReceivedTokens += input.amount;
+        locals.logTokens = TokensLogger{
+            CONTRACT_INDEX,
+            state.lockedTokens,
+            state.totalReceivedTokens,
+            0
+        };
+
+        LOG_INFO(locals.logTokens);
+
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
             0, // No order ID
             input.amount,
-            '\0'
+            0
         };
         LOG_INFO(locals.log);
         output.status = 0; // Success
@@ -632,4 +717,3 @@ public:
         state.sourceChain = 0; //Arbitrary numb. No-EVM chain
     _
 };
-
