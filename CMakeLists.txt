@@ -11,16 +11,17 @@ include_directories(external/googletest/googletest/include)
 
 # Header includes
 include_directories(${GTEST_INCLUDE_DIRS})
-include_directories(${PROJECT_SOURCE_DIR}/contracts)
+include_directories(${PROJECT_SOURCE_DIR}/core/src/contract_core)
 include_directories(${PROJECT_SOURCE_DIR}/core/src/contracts)
 include_directories(${PROJECT_SOURCE_DIR}/core/src)
+include_directories(${PROJECT_SOURCE_DIR}/core/test)
 
 # Test cpp
-add_executable(QubicOrderContractTests test/QubicOrderContractTest.cpp)
+add_executable(ContractTestingEthBridge ${PROJECT_SOURCE_DIR}/core/test/contract_ethbridge.cpp)
 
 # Link Google Test with test script
-target_link_libraries(QubicOrderContractTests gtest gtest_main pthread)
+target_link_libraries(ContractTestingEthBridge gtest gtest_main pthread)
 
 # Discover and load gTests
 include(GoogleTest)
-gtest_discover_tests(QubicOrderContractTests)
+gtest_discover_tests(ContractTestingEthBridge)
