@@ -105,9 +105,37 @@ When the contract is deployed, the following values are initialized:
 
 ---
 
+### **Admin Functions**
+
+#### 3. `setAdmin` (Procedure) 
+- **Purpose**: Assigns a new admin to the contract.
+- **Inputs**:
+  - `address`: New admin's address.
+- **Outputs**:
+  - `status`: (`0` = Success, `1` = Unauthorized).
+  - **Logging**: Logs success or unauthorized access.
+
+#### 4. `addManager` (Procedure)
+- **Purpose**: Adds a new manager.
+- **Inputs**:
+  - `address`: Address of the new manager.
+- **Outputs**:
+  - `status`: (`0` = Success, `1` = Unauthorized).
+  - **Logging**: Logs changes to manager roles.
+
+#### 5. `removeManager` (Procedure)
+- **Purpose**: Removes an existing manager.
+- **Inputs**:
+  - `address`: Address of the manager to remove.
+- **Outputs**:
+  - `status`: (`0` = Success, `1` = Unauthorized).
+  - **Logging**: Logs changes to manager roles.
+
+---
+
 ### **Manager Procedures**
 
-#### 3. `completeOrder` (Procedure)
+#### 5. `completeOrder` (Procedure)
 - **Purpose**: Marks an order as completed, releasing tokens to the recipient.
 - **Inputs**:
   - `orderId`: ID of the order to complete.
@@ -123,41 +151,13 @@ When the contract is deployed, the following values are initialized:
     - Transfers tokens back to the user.
   - Updates the order status to `Completed`.
 
-#### 4. `refundOrder` (Procedure)
+#### 6. `refundOrder` (Procedure)
 - **Purpose**: Refunds an order, returning locked tokens to the sender.
 - **Inputs**:
   - `orderId`: ID of the order to refund.
 - **Outputs**:
   - `status`: (`0` = Success, `1` = Not found, `2` = Invalid state).
   - **Logging**: Logs `orderNotFound` or successful refund.
-
----
-
-### **Admin Functions**
-
-#### 5. `setAdmin` (Procedure) 
-- **Purpose**: Assigns a new admin to the contract.
-- **Inputs**:
-  - `address`: New admin's address.
-- **Outputs**:
-  - `status`: (`0` = Success, `1` = Unauthorized).
-  - **Logging**: Logs success or unauthorized access.
-
-#### 6. `addManager` (Procedure)
-- **Purpose**: Adds a new manager.
-- **Inputs**:
-  - `address`: Address of the new manager.
-- **Outputs**:
-  - `status`: (`0` = Success, `1` = Unauthorized).
-  - **Logging**: Logs changes to manager roles.
-
-#### 7. `removeManager` (Procedure)
-- **Purpose**: Removes an existing manager.
-- **Inputs**:
-  - `address`: Address of the manager to remove.
-- **Outputs**:
-  - `status`: (`0` = Success, `1` = Unauthorized).
-  - **Logging**: Logs changes to manager roles.
 
 ---
 
@@ -170,6 +170,51 @@ When the contract is deployed, the following values are initialized:
 - **Outputs**:
   - `status`: (`0` = Success, `1` = Invalid amount, `2` = Transfer failed, `3` = Insufficient balance).
   - **Logging**: Logs errors like `transferFailed`.
+
+#### 11. `getTotalReceivedTokens` (Function)
+- **Purpose**: Retrieves the total number of tokens currently received by the contract.
+- **Inputs**: None.
+- **Outputs**:
+  - `totalReceivedTokens`: The number of tokens that the contract has received due to pending or active orders.
+- **Use Case**: Used to track how many tokens are received and awaiting to be used on bridge operations, providing insights into liquidity.
+
+
+#### 12. `getAdminID` (Function)
+- **Purpose**: Returns the ID of the current contract admin.
+- **Inputs**: None.
+- **Outputs**:
+  - `adminId`: Address of the current admin.
+- **Use Case**: Allows any user to check the admin's address for transparency and verification purposes.
+
+#### 13. `getInvocatorID` (Function)
+- **Purpose**: Returns the ID of the user invoking the contract.
+- **Inputs**: None.
+- **Outputs**:
+  - `invocatorId`: Address of the user making the current call.
+- **Use Case**: Ensures the identity of the user interacting with the contract, useful for debugging or tracing operations.
+
+- #### 14. `getTotalLockedTokens` (Function)
+- **Purpose**: Retrieves the total number of tokens currently locked in the contract.
+- **Inputs**: None.
+- **Outputs**:
+  - `totalLockedTokens`: The number of tokens currently locked due to pending or active orders.
+- **Use Case**: Used to track how many tokens are locked in ongoing bridge operations, providing insights into liquidity.
+
+---
+### **Private Security Methods**
+#### 9. `isAdmin` (Function)
+- **Purpose**: checks if the qpi.invocator() or a set ID is equals to Admin's ID.
+- **Inputs**:
+  - `address`: address to evaluate
+- **Outputs**:
+  - `status`: (`0` = is Admin's ID, `1` = is not Admin's ID).
+
+#### 10. `isManager` (Function)
+- **Purpose**: checks if the qpi.invocator() or a set ID is equals to Manager's ID.
+- **Inputs**:
+  - `address`: address to evaluate
+- **Outputs**:
+  - `status`: (`0` = is Manager's ID, `1` = is not a Manager's ID).
 
 ---
 
